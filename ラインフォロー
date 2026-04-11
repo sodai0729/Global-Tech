@@ -1,0 +1,173 @@
+import sys
+import cv2 as cv
+import numpy as np
+
+sys.path.insert(1, "../../library")
+import racecar_core
+import racecar_utils as rc_utils
+
+rc = racecar_core.create_racecar()
+
+# ========================
+# 定数
+# ========================
+MIN_CONTOUR_AREA = 30
+CROP_FLOOR = ((360, 0), (rc.camera.get_height(), rc.camera.get_width()))
+
+BLUE = ((90, 50, 50), (120, 255, 255))
+GREEN = ((35, 50, 50), (80, 255, 255))
+RED = ((0, 50, 50), (10, 255, 255))
+
+COLOR_PRIORITY = (BLUE, GREEN, RED)
+
+# ========================
+# PIDパラメータ（ここ調整）
+# ========================
+Kp = 1.2
+Ki = 0.0
+Kd = 0.4
+
+# ========================
+# 変数
+# ========================
+speed = 0.0
+angle = 0.0
+
+contour_center = None
+contour_area = 0
+
+integral = 0
+prev_error = 0
+
+# ========================
+# 輪郭検出
+# ========================
+def update_contour():
+    global contour_center, contour_area
+
+    image = rc.camera.get_color_image()
+
+    if image is None:
+        contour_center = None
+        contour_area = 0
+        return
+
+    image = rc_utils.crop(image, CROP_FLOOR[0], CROP_FLOOR[1])
+
+    contour_center = None
+    contour_area = 0
+
+    for color in COLOR_PRIORITY:
+        contours = rc_utils.find_contours(image, color[0], color[1])
+        contour = rc_utils.get_largest_contour(contours, MIN_CONTOUR_AREA)
+
+        if contour is not None:
+            contour_center = rc_utils.get_contour_center(contour)
+            contour_area = rc_utils.get_contour_area(contour)
+            break
+
+    rc.display.show_color_image(image)
+
+# ========================
+# start
+# ========================
+def start():
+    global speed, angle, integral, prev_error
+
+    speed = 0
+    angle = 0
+    integral = 0
+    prev_error = 0
+
+    rc.drive.set_speed_angle(speed, angle)
+    rc.set_update_slow_time(0.5)
+
+    print(">> PID Line Following START")
+
+# ========================
+# update（メイン制御）
+# ========================
+def update():
+    global speed, angle
+    global integral, prev_error
+
+    update_contour()
+
+    # ===== PID制御 =====
+    if contour_center is not None:
+        width = rc.camera.get_width()
+
+        # 誤差（-1〜1）
+        error = rc_utils.remap_range(contour_center[1], 0, width, -1, 1)
+
+        # P
+        P = Kp * error
+
+        # I（暴走防止で制限）
+        integral += error
+        integral = rc_utils.clamp(integral, -1, 1)
+        I = Ki * integral
+
+        # D
+        derivative = error - prev_error
+        D = Kd * derivative
+
+        # 合成
+        angle = P + I + D
+
+        # 更新
+        prev_error = error
+
+    else:
+        # ライン見失ったら徐々に戻す
+        angle *= 0.9
+
+    # 角度制限
+    angle = rc_utils.clamp(angle, -1, 1)
+
+    # ===== スピード制御 =====
+    rt = rc.controller.get_trigger(rc.controller.Trigger.RIGHT)
+    lt = rc.controller.get_trigger(rc.controller.Trigger.LEFT)
+
+    base_speed = rt - lt
+
+    # カーブで減速
+    speed = base_speed * (1 - abs(angle))
+
+    # 最低速度保証（止まり防止）
+    if base_speed > 0:
+        speed = max(speed, 0.2)
+
+    # ===== 出力 =====
+    rc.drive.set_speed_angle(speed, angle)
+
+    # デバッグ
+    if rc.controller.is_down(rc.controller.Button.A):
+        print(f"Speed: {speed:.2f}, Angle: {angle:.2f}")
+
+    if rc.controller.is_down(rc.controller.Button.B):
+        if contour_center is None:
+            print("No contour")
+        else:
+            print(f"Center: {contour_center}, Area: {contour_area}")
+
+# ========================
+# slow update
+# ========================
+def update_slow():
+    if rc.camera.get_color_image() is None:
+        print("X" * 10 + " (No image) " + "X" * 10)
+    else:
+        if contour_center is None:
+            print("-" * 32 + f" : area = {contour_area}")
+        else:
+            s = ["-"] * 32
+            s[int(contour_center[1] / 20)] = "|"
+            print("".join(s) + f" : area = {contour_area}")
+
+# ========================
+# 実行
+# ========================
+if __name__ == "__main__":
+    rc.set_start_update(start, update, update_slow)
+    rc.go()
