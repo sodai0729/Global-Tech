@@ -29,7 +29,7 @@ def start():
 def get_valid_distance(scan, angle_index):
     d = scan[angle_index]
 
-    if d == 0 or d > 1000:
+    if d == 0 or d > 300:
         return None
     return d
 
