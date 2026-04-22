@@ -59,9 +59,6 @@ def update():
     angle = KP * error
 
 
-  
-
-    # 制限
     angle = rc_utils.clamp(angle, -1, 1)
 
 
@@ -70,18 +67,12 @@ def update():
 
     base_speed = rt - lt
 
-    # カーブ減速
     speed = base_speed * (1 - abs(angle))
 
-    # 最低速度保証
     if base_speed > 0:
         speed = max(speed, 0.25)
 
     speed = rc_utils.clamp(speed, -MAX_SPEED, MAX_SPEED)
-
-    # ========================
-    # 出力
-    # ========================
     rc.drive.set_speed_angle(speed, angle)
 
 
