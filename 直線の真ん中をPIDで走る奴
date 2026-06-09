@@ -1,0 +1,97 @@
+"""
+Copyright MIT and Harvey Mudd College
+MIT License
+Summer 2020
+
+Lab G2 - LIDAR Wall Following (Pure Center Line Only / Lightweight)
+"""
+
+import sys
+import cv2 as cv
+import numpy as np
+
+sys.path.insert(0, "../../library")
+import racecar_core
+import racecar_utils as rc_utils
+
+########################################################################################
+# Global variables
+########################################################################################
+
+rc = racecar_core.create_racecar()
+
+# PID制御用の変数
+integral = 0.0
+prev_error = 0.0
+prev_prev_error = 0.0
+
+########################################################################################
+# Functions
+########################################################################################
+
+def start():
+    print(">> Lab 4B - LIDAR Wall Following (Pure Center Line Only)")
+
+
+def update():
+    global integral, prev_error, prev_prev_error
+
+    scan = rc.lidar.get_samples()
+
+    # -------------------------------------------------------------------------
+    # 1. LiDAR反転補正を入れたサンプリング（正面から左右20°〜50°）
+    # -------------------------------------------------------------------------
+    # 本来の角度に180を足して % 360 することで、物理的な反転を吸収します
+    right_angle = [(deg + 180) % 360 for deg in range(20, 51, 5)]
+    left_angle  = [(deg + 180) % 360 for deg in range(310, 341, 5)] 
+
+    right_distance = []
+    left_distance = []
+
+    for i in range(len(right_angle)):
+        right_distance.append(rc_utils.get_lidar_average_distance(scan, right_angle[i], 8))
+        left_distance.append(rc_utils.get_lidar_average_distance(scan, left_angle[i], 8))
+
+    right_avg = sum(right_distance) / len(right_distance)
+    left_avg  = sum(left_distance) / len(left_distance)
+
+    # -------------------------------------------------------------------------
+    # 2. 左右逆転を補正したエラー計算
+    # -------------------------------------------------------------------------
+    # LiDARの左右が逆になっているため、(左の距離 - 右の距離) で計算すると
+    # 正しいハンドル方向（右に寄ったら左へ、左に寄ったら右へ）に動きます
+    error = left_avg - right_avg
+
+    # -------------------------------------------------------------------------
+    # 3. PID計算（ハンチングを抑える微調整済み）
+    # -------------------------------------------------------------------------
+    Kp = 0.004   
+    Ki = 0.0
+    Kd = 0.022   
+
+    integral += error
+    integral = rc_utils.clamp(integral, -10, 10)
+
+    derivative  = error - prev_error
+    derivative2 = prev_error - prev_prev_error
+
+    # 過去2フレームのブレを考慮して滑らかに曲げる
+    angle = Kp * error + Kd * (derivative * 0.3 + derivative2 * 0.7)
+    angle = rc_utils.clamp(angle, -1, 1)
+
+    # 履歴の更新
+    prev_prev_error = prev_error
+    prev_error = error
+
+    # 速度は 0.3 固定
+    speed = 0.3
+
+    # ターミナル出力を軽量化（余計な文字は一切なし）
+    print(f"angle: {angle:.2f}")
+
+    rc.drive.set_speed_angle(speed, angle)
+
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update, None)
+    rc.go()
