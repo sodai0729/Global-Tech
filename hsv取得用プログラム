@@ -1,0 +1,100 @@
+# TODO: 必要に応じてisSimulationを更新する
+isSimulation = False
+# Pythonライブラリのインポート
+import cv2 as cv
+import numpy as np
+import matplotlib.pyplot as plt
+import ipywidgets as widgets
+from typing import Any, Tuple, List, Optional
+
+# Racecarライブラリのインポート
+import sys
+sys.path.append("../../library")
+import racecar_core
+def show_image(image: np.ndarray) -> None:
+    """
+    Jupyter Notebookにカラー画像を表示します。
+    """
+    plt.imshow(cv.cvtColor(image, cv.COLOR_BGR2RGB))
+    plt.show()
+
+    
+def draw_contour(
+    image: np.ndarray,
+    contour: np.ndarray,
+    color: Tuple[int, int, int] = (0, 255, 0)
+) -> None:
+    """
+    指定された画像に輪郭を描画する。
+
+    Args:
+        image: 輪郭を描画する画像
+        contour: 画像に描画する輪郭
+        color: BGR形式でして逸された輪郭を描画する色
+    """
+    cv.drawContours(image, [contour], 0, color, 3)
+
+    
+def draw_circle(
+    color_image: np.ndarray[(Any, Any, 3), np.uint8],
+    center: Tuple[int, int],
+    color: Tuple[int, int, int] = (0, 255, 255),
+    radius: int = 6,
+) -> None:
+    """
+    指定された画像に円を描く
+
+    Args:
+        color_image: 輪郭を描画する色画像
+        center: 画像の中心ピクセル (行, 列)
+        color: BGR形式で指定された円を描く色
+        radius: ピクセル単位の円の半径
+    """
+    # cv.circle は(列, 行)の形式で円の中心を指定します
+    cv.circle(color_image, (center[1], center[0]), radius, color, -1)
+
+    
+def show_color_bgr(blue: int, green: int, red: int) -> None:
+    """
+    BGR形式で指定された色を表示する
+    """
+    rectangle = plt.Rectangle((0,0), 50, 50, fc=(red/255, green/255, blue/255))
+    plt.gca().add_patch(rectangle)
+    plt.show()
+
+    
+def show_color_hsv(hue: int, saturation: int, value: int) -> None:
+    """
+    HSV形式で指定された色を表示する
+    """
+    # HSVからBGR形式に変換する
+    hsv = np.array([[[hue, saturation, value]]], np.uint8)
+    bgr = cv.cvtColor(hsv, cv.COLOR_HSV2BGR)
+    
+    show_color_bgr(bgr[0][0][0], bgr[0][0][1], bgr[0][0][2])
+# Racecar オブジェクトの作成
+rc = racecar_core.create_racecar(isSimulation)
+
+# 実機の場合はスレッドでROS2との通信を実行する
+if not isSimulation:
+    import threading
+    spin_thread = threading.Thread(target=rc.go, daemon=True)
+    spin_thread.start()
+# 写真を撮影し画面に表示する
+image = rc.camera.get_color_image_async()
+show_image(image)
+# 中心の行と列を計算する
+row = rc.camera.get_height() // 2
+col = rc.camera.get_width() // 2
+
+# 青、緑、赤の各色の値を抽出して表示する
+blue = image[row][col][0]
+green = image[row][col][1]
+red = image[row][col][2]
+
+print("blue:", blue)
+print("green:", green)
+print("red:", red)
+
+# 同じ色を画面に表示する
+show_color_bgr(blue, green, red)
