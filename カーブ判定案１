@@ -1,0 +1,45 @@
+def forward_four_way_values(scan,A):
+#scanはライダーの値、Aは実機の場合に１８０を代入
+    allowable_difference_of_sharp = 1.05
+    enough_distance_to_the_front =350
+    long_distance_to_turn = 160
+    close_distance_to_turn = 100
+
+    right_s_angle = [i for i in range(15+A,26+A,5)]
+    left_s_angle = [i for i in range(345+A,356+A,5) ]
+    right_angle = [i for i in range(45+A,61+A,5)]
+    left_angle = [i for i in range(300+A,316+A,5)]
+    #前よりの２つの値と斜め５０度あたりの壁との距離を取得
+    right_s = []
+    left_s = []
+    right_a = []
+    left_a= []
+
+    for i in range(len(right_s_angle)):
+        
+        right_s.append(rc_utils.get_lidar_average_distance(scan, right_s_angle[i], 8))
+        left_s.append(rc_utils.get_lidar_average_distance(scan, left_s_angle[i], 8))
+        right_a.append(rc_utils.get_lidar_average_distance(scan, right_angle[i], 8))
+        left_a.append(rc_utils.get_lidar_average_distance(scan, left_angle[i], 8))
+
+    # 平均距離
+    right_sharp = sum(right_s) / len(right_s)
+    left_sharp= sum(left_s) / len(left_s)
+    left= sum(left_a) / len(left_a)
+    right = sum(right_a) / len(right_a)
+
+    if right_sharp is None or left_sharp is None:
+        mode = "straight"
+    else:
+        if right_sharp < 350 or left_sharp < 350:
+            if right > long_distance_to_turn and left < close_distance_to_turn:
+                mode = "carve"
+            elif right < close_distance_to_turn and left > long_distance_to_turn:
+                mode = "carve"
+            else:
+                mode = "straight"
+        else:
+            mode = "straight"
+    #２つの前方向の値が値がない場合、この先直線だとみなせるため直線モード
+    #特定の距離よりも右５０度の値もしくは左５０度の値が大きくなった場合カーブモード
+    return mode,right,left
