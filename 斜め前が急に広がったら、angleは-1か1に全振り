@@ -58,8 +58,8 @@ def straight(scan):
 
     error = right_avg - left_avg
 
-    Kp = 0.004
-    Kd = 0.022
+    Kp = 0.004  #実機用に調節して
+    Kd = 0.022　#実機用に調節して
 
     global prev_error
 
@@ -69,10 +69,10 @@ def straight(scan):
     angle = Kp * error + Kd * derivative
     angle = rc_utils.clamp(angle, -1, 1)
 
-    speed = 1.0
+    speed = 1.0　#実機用に調節して
     print(f"straight",angle)
     if abs(error) > 50:
-        speed = 0.8
+        speed = 0.8　#実機用に調節して
 
     return angle, speed
     
@@ -82,11 +82,11 @@ def straight(scan):
 ##################################################
 
 def turn_right():
-    return 1, 1
+    return 1, 1　#実機用に調節して特にspeed
 
 
 def turn_left():
-    return -1, 1
+    return -1, 1　#実機用に調節して特にspeed
     
 
 ##################################################
@@ -117,13 +117,13 @@ def update():
         rc_utils.get_lidar_average_distance(scan, 55, 5),
         rc_utils.get_lidar_average_distance(scan, 60, 5),
         rc_utils.get_lidar_average_distance(scan, 65, 5)
-    )
+    )#実機用に調節して
 
     left_front = max(
         rc_utils.get_lidar_average_distance(scan, 295, 5),
         rc_utils.get_lidar_average_distance(scan, 300, 5),
         rc_utils.get_lidar_average_distance(scan, 305, 5)
-    )
+    )#実機用に調節して
 
     ##################################################
     # STRAIGHT MODE
@@ -133,10 +133,10 @@ def update():
 
         angle, speed = straight(scan)
 
-        if right_front > 70 and right_front > prev_right_front * 2:
+        if right_front > 180 and right_front > prev_right_front * 2:
             mode = "RIGHT"
 
-        elif left_front > 70 and left_front > prev_left_front * 2:
+        elif left_front > 180 and left_front > prev_left_front * 2:
             mode = "LEFT"
 
 
