@@ -157,10 +157,11 @@ def bothwallfollow1(scan,A):
     right_avg = sum(right_distance) / len(right_distance)
     left_avg = sum(left_distance) / len(left_distance)
     Kp = 0.0005
-    #Kp = 0.02
+    
+    #Kp = 0.0002 に変更後のほうがいい
     Ki = 0.0
     Kd = 0.005
-    #Kd = 0.008
+    #Kd = 0.05　に変更後のほうがいい
     targetdistance = right_avg
     value = left_avg
     return Kp,Kd,targetdistance,value
@@ -183,7 +184,9 @@ def bothwallfollow2(scan,A):
 
     
     Kp = 0.02
+    #Kp = 0.021
     Kd = 0.05
+    #Kd = 0.07
     targetdistance = right_avg
     value = left_avg
     return Kp,Kd,targetdistance,value
