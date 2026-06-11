@@ -59,7 +59,7 @@ def straight(scan):
     error = right_avg - left_avg
 
     Kp = 0.004  #実機用に調節して
-    Kd = 0.022　#実機用に調節して
+    Kd = 0.022 #実機用に調節して
 
     global prev_error
 
@@ -69,10 +69,10 @@ def straight(scan):
     angle = Kp * error + Kd * derivative
     angle = rc_utils.clamp(angle, -1, 1)
 
-    speed = 1.0　#実機用に調節して
+    speed = 0.2 #実機用に調節して
     print(f"straight",angle)
     if abs(error) > 50:
-        speed = 0.8　#実機用に調節して
+        speed = 0.2 #実機用に調節して
 
     return angle, speed
     
@@ -82,11 +82,11 @@ def straight(scan):
 ##################################################
 
 def turn_right():
-    return 1, 1　#実機用に調節して特にspeed
+    return 1, 0.2 #実機用に調節して特にspeed
 
 
 def turn_left():
-    return -1, 1　#実機用に調節して特にspeed
+    return -1, 0.2 #実機用に調節して特にspeed
     
 
 ##################################################
@@ -110,7 +110,7 @@ def update():
     scan = rc.lidar.get_samples()
 
     ##################################################
-    # FRONT FEATURES
+    # FRONT FEATURES (0.0 の場合は 600 に置換)
     ##################################################
 
     right_front = max(
@@ -119,11 +119,17 @@ def update():
         rc_utils.get_lidar_average_distance(scan, 65, 5)
     )#実機用に調節して
 
+    # ★ right_frontが0.0なら600にする処理を追加
+    right_front = 600 if right_front == 0.0 else right_front
+
     left_front = max(
         rc_utils.get_lidar_average_distance(scan, 295, 5),
         rc_utils.get_lidar_average_distance(scan, 300, 5),
         rc_utils.get_lidar_average_distance(scan, 305, 5)
     )#実機用に調節して
+
+    # ★ left_frontが0.0なら600にする処理を追加
+    left_front = 600 if left_front == 0.0 else left_front
 
     ##################################################
     # STRAIGHT MODE
@@ -133,10 +139,10 @@ def update():
 
         angle, speed = straight(scan)
 
-        if right_front > 180 and right_front > prev_right_front * 2:
+        if right_front > 180 and right_front > prev_right_front * 1.7:
             mode = "RIGHT"
 
-        elif left_front > 180 and left_front > prev_left_front * 2:
+        elif left_front > 180 and left_front > prev_left_front * 1.7:
             mode = "LEFT"
 
 
@@ -180,7 +186,7 @@ def update():
 
     prev_right_front = right_front
     prev_left_front = left_front
-
+    
     rc.drive.set_speed_angle(speed, angle)
     
 
