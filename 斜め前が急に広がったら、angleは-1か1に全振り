@@ -58,8 +58,8 @@ def straight(scan):
 
     error = right_avg - left_avg
 
-    Kp = 0.007
-    Kd = 0.012
+    Kp = 0.004
+    Kd = 0.022
 
     global prev_error
 
