@@ -186,7 +186,7 @@ def update():
 
     prev_right_front = right_front
     prev_left_front = left_front
-    
+    speed= -speed
     rc.drive.set_speed_angle(speed, angle)
     
 
