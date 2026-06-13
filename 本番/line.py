@@ -1,0 +1,221 @@
+
+import sys
+import cv2 as cv
+import numpy as np
+
+sys.path.insert(1, "../../library")
+#import racecar_core
+import racecar_utils as rc_utils
+
+#rc = racecar_core.create_racecar()
+from rcdefine import rc
+
+MIN_CONTOUR_AREA = 30
+CROP_FLOOR = ((360, 0), (rc.camera.get_height(), rc.camera.get_width()))
+
+BLUE = ((75, 0, 50), (120, 60, 130))
+
+Kp = 0.1
+Ki = 0.0
+Kd = 0.6
+
+speed = 0.0
+angle = 0.0
+
+contour_center = None
+contour_area = 0
+
+integral = 0
+prev_error = 0
+last_angle = 0
+
+
+def update_contour(rc):
+    global contour_center, contour_area
+
+    image = rc.camera.get_color_image()
+
+    if image is None:
+        contour_center = None
+        contour_area = 0
+        return
+
+    image = rc_utils.crop(image, CROP_FLOOR[0], CROP_FLOOR[1])
+
+    contours = rc_utils.find_contours(image, BLUE[0], BLUE[1])
+    contour = rc_utils.get_largest_contour(contours, MIN_CONTOUR_AREA)
+
+    if contour is not None:
+
+        contour_area = rc_utils.get_contour_area(contour)
+
+        # ラインの一番下の点を使う
+        points = contour[:, 0, :]
+        lowest_point = points[np.argmin(points[:, 1])]
+
+        contour_center = (
+            int(lowest_point[1]),
+            int(lowest_point[0])
+        )
+
+        cv.circle(
+            image,
+            (contour_center[1], contour_center[0]),
+            8,
+            (0, 255, 0),
+            -1
+        )
+
+    else:
+        contour_center = None
+        contour_area = 0
+        
+
+def update_contour1(rc):
+     global contour_center, contour_area
+
+     image = rc.camera.get_color_image()
+
+     if image is None:
+      contour_center = None
+      contour_area = 0
+      return
+
+     image = rc_utils.crop(image, CROP_FLOOR[0], CROP_FLOOR[1])
+
+ #   # ===== HSV確認用 =====
+     hsv = cv.cvtColor(image, cv.COLOR_BGR2HSV)
+
+     h, w = hsv.shape[:2]
+     center_pixel = hsv[h // 2, w // 2]
+
+     print(
+        f"H:{center_pixel[0]} "
+        f"S:{center_pixel[1]} "
+        f"V:{center_pixel[2]}"
+      )
+    # ====================
+
+   #   contours = rc_utils.find_contours(image, BLUE[0], BLUE[1])
+
+def start(rc):
+    global speed, angle
+    global integral, prev_error, last_angle
+
+    speed = 0
+    angle = 0
+
+    integral = 0
+    prev_error = 0
+    last_angle = 0
+
+    rc.drive.set_speed_angle(speed, angle)
+    rc.set_update_slow_time(0.5)
+
+    print(">> PID Line Following START")
+
+
+def update(rc):
+    global speed, angle
+    global integral, prev_error, last_angle
+
+    update_contour(rc)
+
+    if contour_center is not None:
+
+        width = rc.camera.get_width()
+
+        error = rc_utils.remap_range(
+            contour_center[1],
+            0,
+            width,
+            -1,
+            1
+        )
+
+        P = Kp * error
+
+        integral += error
+        integral = rc_utils.clamp(integral, -1, 1)
+        I = Ki * integral
+
+        derivative = error - prev_error
+        D = Kd * derivative
+
+        angle = P + I + D
+
+        prev_error = error
+        last_angle = angle
+
+    else:
+        # ラインを見失ったら最後の角度維持
+        angle = last_angle
+
+    angle = rc_utils.clamp(angle, -1, 1)
+
+    rt = rc.controller.get_trigger(
+        rc.controller.Trigger.RIGHT
+    )
+    lt = rc.controller.get_trigger(
+        rc.controller.Trigger.LEFT
+    )
+
+    base_speed = (lt - rt)*0.5
+
+    # カーブで減速しすぎない
+    speed = base_speed * (1 - 0.3 * abs(angle))
+
+    if base_speed > 0:
+        speed = max(speed, 0.20)
+    speed=0.3*speed
+    rc.drive.set_speed_angle(speed, angle)
+    update_contour1(rc)
+    if rc.controller.is_down(rc.controller.Button.A):
+        print(
+            f"Speed: {speed:.2f}, "
+            f"Angle: {angle:.2f}"
+        )
+
+    if rc.controller.is_down(rc.controller.Button.B):
+        if contour_center is None:
+            print("No contour")
+        else:
+            print(
+                f"Center: {contour_center}, "
+                f"Area: {contour_area}")
+def update_slow():
+
+    if rc.camera.get_color_image() is None:
+
+        print(
+            "X" * 10 +
+            " (No image) " +
+            "X" * 10
+        )
+
+    else:
+
+        if contour_center is None:
+
+            print(
+                "-" * 32 +
+                f" : area = {contour_area}"
+            )
+
+        else:
+
+            pos = int(contour_center[1] / 20)
+            pos = max(0, min(31, pos))
+
+            s = ["-"] * 32
+            s[pos] = "|"
+
+            print(
+                "".join(s) +
+                f" : area = {contour_area}"
+            )
+
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update, update_slow)
+    rc.go()
