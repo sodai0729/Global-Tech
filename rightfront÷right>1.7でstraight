@@ -1,0 +1,200 @@
+import sys
+
+sys.path.insert(1, '../../library')
+
+import racecar_core
+import racecar_utils as rc_utils
+import actualdefine
+
+rc = racecar_core.create_racecar()
+
+##################################################
+# GLOBAL
+##################################################
+
+integral = 0
+prev_error = 0
+prev_prev_error = 0
+
+target_distance = 60
+
+A = 180
+mode = "straight"
+
+##################################################
+# START
+##################################################
+
+def start():
+
+    global integral
+    global prev_error
+    global prev_prev_error
+    global target_distance
+    global A
+    global mode
+
+    integral = 0
+    prev_error = 0
+    prev_prev_error = 0
+
+    target_distance = 60
+
+    A = 180
+    mode = "straight"
+
+    rc.drive.stop()
+
+    print(">> Wall Following START")
+
+##################################################
+# CARVE → STRAIGHT
+##################################################
+
+def modosu(scan, A):
+
+    right_d = rc_utils.get_lidar_average_distance(
+        scan,
+        90 + A,
+        5
+    )
+
+    rightfront_d = rc_utils.get_lidar_average_distance(
+        scan,
+        45 + A,
+        5
+    )
+
+    if right_d < 20:
+        return False
+
+    ratio = rightfront_d / right_d
+
+    return ratio < 1.7
+
+##################################################
+# UPDATE
+##################################################
+
+def update():
+
+    global A
+    global mode
+
+    scan = rc.lidar.get_samples()
+
+    ##################################################
+    # MODE UPDATE
+    ##################################################
+
+    detected_mode, right, left = actualdefine.forward_four_way_values(
+        scan,
+        A
+    )
+
+    if mode == "carve":
+
+        if modosu(scan, A):
+            mode = "straight"
+
+    else:
+
+        if detected_mode == "carve":
+            mode = "carve"
+        else:
+            mode = "straight"
+
+    ##################################################
+    # CONTROL
+    ##################################################
+
+    if mode == "straight":
+
+        Kp, Kd, targetdistance, value = \
+            actualdefine.bothwallfollow1(scan, A)
+
+        angle = actualdefine.AnglePIDcontrol(
+            Kp,
+            Kd,
+            targetdistance,
+            value
+        )
+
+    elif mode == "carve":
+
+        Kp, Kd, targetdistance, value = \
+            actualdefine.bothwallfollow2(scan, A)
+
+        angle = actualdefine.AnglePIDcontrol(
+            Kp,
+            Kd,
+            targetdistance,
+            value
+        )
+
+    else:
+
+        angle = 0
+
+    ##################################################
+    # BUTTON
+    ##################################################
+
+    if rc.controller.was_pressed(rc.controller.Button.A):
+        A = 180
+
+    if rc.controller.was_pressed(rc.controller.Button.B):
+        A = 0
+
+    ##################################################
+    # SPEED
+    ##################################################
+
+    speed = -actualdefine.Speedcontrol(
+        scan,
+        angle,
+        A
+    )
+
+    ##################################################
+    # DEBUG
+    ##################################################
+
+    right_d = rc_utils.get_lidar_average_distance(
+        scan,
+        90 + A,
+        5
+    )
+
+    rightfront_d = rc_utils.get_lidar_average_distance(
+        scan,
+        45 + A,
+        5
+    )
+
+    ratio = 0
+
+    if right_d > 1:
+        ratio = rightfront_d / right_d
+
+    print(
+        f"mode:{mode} "
+        f"right:{right:.1f} "
+        f"left:{left:.1f} "
+        f"ratio:{ratio:.2f} "
+        f"angle:{angle:.2f}"
+    )
+
+    ##################################################
+    # DRIVE
+    ##################################################
+
+    rc.drive.set_speed_angle(speed, angle)
+
+##################################################
+# MAIN
+##################################################
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update)
+    rc.go()
