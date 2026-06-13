@@ -1,4 +1,4 @@
-import actualracecar
+import wallf
 import  line
 import racecar_core
 
@@ -12,7 +12,7 @@ line_lost_count = 0
 
 
 def start():
-    actualracecar.start()
+    wallf.start()
     line.start()
 
     print("AUTO MODE START")
@@ -83,7 +83,7 @@ def update():
 
     if mode == "wall":
 
-        actualracecar.update()
+        wallf.update()
 
     elif mode == "line":
 
