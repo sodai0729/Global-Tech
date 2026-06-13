@@ -1,0 +1,34 @@
+Kp = 0.023
+Kd = 0.05
+targetdistance = right_avg
+value = left_avg
+
+return Kp,Kd,targetdistance,value
+
+#この部分はこのまま
+#wallf.pyのupdate内の
+
+elif mode =="right_carve":
+    Kp,Kd,value,targetdistance = actualdefine.bothwallfollow2(scan,A)
+    angle= actualdefine.AnglePIDcontrol(Kp,Kd,targetdistance,value)
+
+#これを下の
+
+elif mode =="right_carve":
+
+    Kp,Kd,targetdistance,value, = \
+        actualdefine.bothwallfollow2(scan,A)
+
+    angle = actualdefine.AnglePIDcontrol(
+        Kp,
+        Kd,
+        targetdistance,
+        value
+    )
+
+    if value <= targetdistance * 3:
+        angle = max(angle,0.3)
+
+#におきかえる
+
+
