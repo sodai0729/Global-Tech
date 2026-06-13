@@ -1,0 +1,99 @@
+import actualracecar
+import  line
+import racecar_core
+
+rc = racecar_core.create_racecar()
+
+mode = "wall"
+
+# ライン検出安定化用
+line_detect_count = 0
+line_lost_count = 0
+
+
+def start():
+    actualracecar.start()
+    line.start()
+
+    print("AUTO MODE START")
+
+
+def update():
+    global mode
+    global line_detect_count
+    global line_lost_count
+
+    # ライン情報更新
+    line.update_contour()
+
+    # =========================
+    # wall → line
+    # =========================
+
+    if (
+        mode == "wall"
+        and line.contour_center is not None
+        and line.contour_area > 30
+        and 200 < line.contour_center[1] < 440
+    ):
+
+        line_detect_count += 1
+
+    else:
+
+        line_detect_count = 0
+
+    if line_detect_count >= 3:
+
+        mode = "line"
+        line_detect_count = 0
+
+        print("LINE MODE")
+
+
+    # =========================
+    # line → wall
+    # =========================
+
+    if (
+        mode == "line"
+        and (
+            line.contour_center is None
+            or line.contour_area < 20
+        )
+    ):
+
+        line_lost_count += 1
+
+    else:
+
+        line_lost_count = 0
+
+    if line_lost_count >= 5:
+
+        mode = "wall"
+        line_lost_count = 0
+
+        print("WALL MODE")
+
+
+    # =========================
+    # 実行
+    # =========================
+
+    if mode == "wall":
+
+        actualracecar.update()
+
+    elif mode == "line":
+
+        line.update()
+
+
+def update_slow():
+    pass
+
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update, update_slow)
+    rc.go()
