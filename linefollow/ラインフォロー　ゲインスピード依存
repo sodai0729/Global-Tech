@@ -1,0 +1,301 @@
+import sys
+import cv2 as cv
+import numpy as np
+
+sys.path.insert(1, "../../library")
+import racecar_core
+import racecar_utils as rc_utils
+
+rc = racecar_core.create_racecar()
+
+MIN_CONTOUR_AREA = 30
+
+CROP_FLOOR = (
+    (360, 0),
+    (rc.camera.get_height(), rc.camera.get_width())
+)
+
+BLUE = (
+    (120, 120, 240),
+    (179, 200, 255)
+)
+
+speed = 0.0
+angle = 0.0
+
+contour_center = None
+contour_area = 0
+
+integral = 0
+prev_error = 0
+last_angle = 0
+
+
+def update_contour(speed_abs):
+    global contour_center, contour_area
+
+    image = rc.camera.get_color_image()
+
+    if image is None:
+        contour_center = None
+        contour_area = 0
+        return
+
+    image = rc_utils.crop(
+        image,
+        CROP_FLOOR[0],
+        CROP_FLOOR[1]
+    )
+
+    contours = rc_utils.find_contours(
+        image,
+        BLUE[0],
+        BLUE[1]
+    )
+
+    contour = rc_utils.get_largest_contour(
+        contours,
+        MIN_CONTOUR_AREA
+    )
+
+    if contour is not None:
+
+        contour_area = rc_utils.get_contour_area(contour)
+
+        points = contour[:, 0, :]
+
+        # =========================
+        # speedで見る距離変更
+        # speed=0 → 40
+        # speed=1 → 120
+        # =========================
+        lookahead = int(40 + speed_abs * 80)
+
+        max_y = np.max(points[:, 1])
+
+        bottom_points = points[
+            points[:, 1] > max_y - lookahead
+        ]
+
+        avg_x = int(np.mean(bottom_points[:, 0]))
+        avg_y = int(max_y)
+
+        contour_center = (
+            avg_y,
+            avg_x
+        )
+
+        cv.circle(
+            image,
+            (contour_center[1], contour_center[0]),
+            8,
+            (0, 255, 0),
+            -1
+        )
+
+    else:
+        contour_center = None
+        contour_area = 0
+
+
+def start():
+    global speed, angle
+    global integral, prev_error, last_angle
+
+    speed = 0
+    angle = 0
+
+    integral = 0
+    prev_error = 0
+    last_angle = 0
+
+    rc.drive.set_speed_angle(speed, angle)
+
+    rc.set_update_slow_time(0.5)
+
+    print(">> Dynamic PID Line Following START")
+
+
+def update():
+    global speed, angle
+    global integral, prev_error, last_angle
+
+    rt = rc.controller.get_trigger(
+        rc.controller.Trigger.RIGHT
+    )
+
+    lt = rc.controller.get_trigger(
+        rc.controller.Trigger.LEFT
+    )
+
+    # 最大1
+    base_speed = (lt - rt)
+
+    speed_abs = abs(base_speed)
+
+    # =========================
+    # speed依存lookahead
+    # =========================
+    update_contour(speed_abs)
+
+    if contour_center is not None:
+
+        width = rc.camera.get_width()
+
+        error = rc_utils.remap_range(
+            contour_center[1],
+            0,
+            width,
+            -1,
+            1
+        )
+
+        # =========================
+        # Dynamic PID
+        # =========================
+        Kp = 0.55 - speed_abs * 0.33
+        Ki = 0.0
+        Kd = 0.05 + speed_abs * 0.23
+
+        # P
+        P = Kp * error
+
+        # I
+        integral += error
+        integral = rc_utils.clamp(
+            integral,
+            -1,
+            1
+        )
+
+        I = Ki * integral
+
+        # D
+        derivative = error - prev_error
+
+        derivative = rc_utils.clamp(
+            derivative,
+            -0.2,
+            0.2
+        )
+
+        D = Kd * derivative
+
+        raw_angle = P + I + D
+
+        # =========================
+        # angle平滑化
+        # =========================
+        smooth = 0.5 + speed_abs * 0.3
+
+        angle = (
+            last_angle * smooth +
+            raw_angle * (1 - smooth)
+        )
+
+        prev_error = error
+        last_angle = angle
+
+    else:
+
+        angle = last_angle
+
+    angle = rc_utils.clamp(
+        angle,
+        -1,
+        1
+    )
+
+    # =========================
+    # カーブ減速
+    # =========================
+    speed = base_speed * (
+        1 - 0.4 * abs(angle)
+    )
+
+    # 最低速度
+    if base_speed > 0:
+        speed = max(speed, 0.15)
+
+    rc.drive.set_speed_angle(
+        speed,
+        angle
+    )
+
+    # =========================
+    # DEBUG
+    # =========================
+    if rc.controller.is_down(
+        rc.controller.Button.A
+    ):
+
+        print(
+            f"Speed:{speed:.2f} "
+            f"Angle:{angle:.2f}"
+        )
+
+    if rc.controller.is_down(
+        rc.controller.Button.B
+    ):
+
+        if contour_center is None:
+
+            print("No contour")
+
+        else:
+
+            print(
+                f"Center:{contour_center} "
+                f"Area:{contour_area}"
+            )
+
+
+def update_slow():
+
+    if rc.camera.get_color_image() is None:
+
+        print(
+            "X" * 10 +
+            " (No image) " +
+            "X" * 10
+        )
+
+    else:
+
+        if contour_center is None:
+
+            print(
+                "-" * 32 +
+                f" : area = {contour_area}"
+            )
+
+        else:
+
+            pos = int(
+                contour_center[1] / 20
+            )
+
+            pos = max(
+                0,
+                min(31, pos)
+            )
+
+            s = ["-"] * 32
+
+            s[pos] = "|"
+
+            print(
+                "".join(s) +
+                f" : area = {contour_area}"
+            )
+
+
+if __name__ == "__main__":
+
+    rc.set_start_update(
+        start,
+        update,
+        update_slow
+    )
+
+    rc.go()
