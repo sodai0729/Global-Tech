@@ -1,0 +1,171 @@
+"""
+Copyright MIT and Harvey Mudd College
+MIT License
+Summer 2020
+
+Lab G2 - LIDAR Wall Following (Always Speed 1.0 / 15-Frame Lock Symmetrical Version)
+"""
+
+import sys
+import cv2 as cv
+import numpy as np
+
+sys.path.insert(0, "../../library")
+import racecar_core
+import racecar_utils as rc_utils
+
+########################################################################################
+# Global variables
+########################################################################################
+
+rc = racecar_core.create_racecar()
+
+# 変数の初期化
+integral = 0.0
+prev_error = 0.0
+prev_prev_error = 0.0
+speed = 1.0  
+angle = 0.0
+
+# モード2（直角カーブ専用割り込み）のための変数
+prev_front_avg = 0.0      
+is_mode2_active = False   
+mode2_direction = 0       
+mode2_counter = 0         # モード2が始まってからのフレーム数を数えるカウンター
+
+########################################################################################
+# Functions
+########################################################################################
+
+def bothwallfollow1(scan):
+    global integral, prev_error, prev_prev_error
+
+    # 左右対称の直線用サンプリング角度（正面から左右20°〜50°）
+    right_angle = list(range(20, 51, 5))
+    left_angle  = list(range(310, 341, 5)) 
+
+    right_distance = []
+    left_distance = []
+
+    for i in range(len(right_angle)):
+        right_distance.append(
+            rc_utils.get_lidar_average_distance(scan, right_angle[i], 8)
+        )
+        left_distance.append(
+            rc_utils.get_lidar_average_distance(scan, left_angle[i], 8)
+        )
+
+    right_avg = sum(right_distance) / len(right_distance)
+    left_avg  = sum(left_distance) / len(left_distance)
+
+    error = right_avg - left_avg
+
+    Kp = 0.007
+    Ki = 0.0
+    Kd = 0.012
+
+    integral += error
+    integral = rc_utils.clamp(integral, -10, 10)
+
+    derivative  = error - prev_error
+    derivative2 = prev_error - prev_prev_error
+
+    angle = Kp * error + Kd * (
+        derivative * 0.3 +
+        derivative2 * 0.7
+    )
+
+    angle = rc_utils.clamp(angle, -1, 1)
+
+    prev_prev_error = prev_error
+    prev_error = error
+
+    return angle, 1.0
+
+
+def start():
+    print(">> Lab 4B - LIDAR Wall Following (15-FRAME LOCK & SPEED 1.0)")
+
+
+def update():
+    global speed, angle, prev_front_avg, is_mode2_active, mode2_direction, mode2_counter
+
+    scan = rc.lidar.get_samples()
+
+    # 左右対称サンプリング（正面から左右40°〜50°の範囲）
+    right_front_angle = list(range(40, 51, 5))    
+    left_front_angle  = list(range(310, 321, 5))  
+
+    right_f = []
+    left_f  = []
+
+    for i in range(len(right_front_angle)):
+        right_f.append(rc_utils.get_lidar_average_distance(scan, right_front_angle[i], 8))
+        left_f.append(rc_utils.get_lidar_average_distance(scan, left_front_angle[i], 8))
+
+    right_front = sum(right_f) / len(right_f)
+    left_front  = sum(left_f) / len(left_f)
+    
+    front_avg = (right_front + left_front) / 2
+
+    if prev_front_avg == 0.0:
+        prev_front_avg = front_avg
+
+    # -------------------------------------------------------------------------
+    # 条件判定ロジック
+    # -------------------------------------------------------------------------
+
+    # 1. すでにモード2（全切りカーブ）が発動中の場合
+    if is_mode2_active:
+        mode2_counter += 1  # フレーム数をカウントアップ
+        
+        # ★ここが最大のポイント：15フレーム（0.25秒）経過するまでは、壁の比率を一切見ない
+        if mode2_counter > 15:
+            ratio = left_front / right_front if right_front != 0 else 1.0
+            
+            # 15フレーム以上経ち、かつ左右のバランスが整ったら直線に戻る
+            if 0.75 <= ratio <= 1.25:
+                is_mode2_active = False
+                mode2_counter = 0  # カウンターリセット
+                angle, speed = bothwallfollow1(scan)
+                print("Mode 2 Finished -> Mode 1")
+            else:
+                # 15フレーム過ぎてもまだ曲がりきっていなければ全切りを維持
+                angle = mode2_direction
+                speed = 1.0  
+                print(f"Mode 2 Keeping by Ratio (Angle: {angle}, Frame: {mode2_counter})")
+        else:
+            # 15フレーム未満のときは、無条件で全切りを強制ホールド（壁の数値は無視）
+            angle = mode2_direction
+            speed = 1.0  
+            print(f"Mode 2 FORCE LOCKING (Angle: {angle}, Frame: {mode2_counter})")
+
+    # 2. 通常走行中の場合（モード2のトリガーを監視）
+    else:
+        # 1.35倍以上の変化でカーブと判定
+        if front_avg >= prev_front_avg * 1.35:
+            is_mode2_active = True
+            mode2_counter = 1  # カウンタースタート
+            
+            if right_front >= left_front:
+                mode2_direction = 1.0   # 右直角なら右に全切り
+            else:
+                mode2_direction = -1.0  # 左直角なら左に全切り
+                
+            angle = mode2_direction
+            speed = 1.0  
+            print(f"Mode 2 Triggered! (Direction: {mode2_direction})")
+        else:
+            # 通常時（モード1：PID直線走行）
+            angle, speed = bothwallfollow1(scan)
+            speed = 1.0
+            print(1)
+
+    prev_front_avg = front_avg
+
+    rc.drive.set_speed_angle(speed, angle)
+
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update, None)
+    rc.go()
