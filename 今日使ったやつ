@@ -1,0 +1,90 @@
+import sys
+
+
+sys.path.insert(1, '../../library')
+import racecar_core
+
+
+rc = racecar_core.create_racecar()
+import racecar_utils as rc_utils
+import math
+import define
+#from define import bothwallfollow1
+
+integral = 0
+prev_error = 0
+prev_prev_error = 0
+target_distance = 60
+A =0
+
+def start():
+    global A,angle,integral,prev_error,prev_prev_error,target_distance,speed,mode
+    integral = 0
+    prev_error = 0
+    prev_prev_error = 0
+    target_distance = 60
+    A = 180
+    angle = 0
+    speed = 0
+    mode = True
+    print(">> Wall Following START")
+
+
+def update():
+    global speed,angle,A,mode
+    scan = rc.lidar.get_samples()
+    right_front,left_front,right_back,left_back= define.Four_way_values(scan,A)
+    
+    if right_front >= left_front:
+        if (right_front+left_front)/2> left_back*2.2:
+            mode =False
+        elif (right_front+left_front)/2< left_back*2.0:
+            mode = True
+            
+
+    else:
+        if (right_front+left_front)/2 > right_back*2.2:
+            mode =  False
+        elif (right_front+left_front)/2 < right_back*2.0:
+            mode = True
+
+    if mode:
+        Kp,Kd,value,targetdistance = define.bothwallfollow2(scan,A)
+        angle= define.AnglePIDcontrol(Kp,Kd,targetdistance,value)
+        #rint("mode1")
+    #else:
+        #Kp,Kd,value,targetdistance = define.bothwallfollow2(scan,A)
+        #angle= define.AnglePIDcontrol(Kp,Kd,targetdistance,value)
+        #print("mode2")
+    
+    if rc.controller.was_pressed(rc.controller.Button.A):
+        A = 180
+    if rc.controller.was_pressed(rc.controller.Button.B):
+        A  = 0
+    
+   
+    speed = -define.Speedcontrol(scan,angle,A)
+    #print((right_front+left_front)/(right_back*2+0.0000000000001))
+    print(angle)
+    print("scan",scan[180])
+    #define.polar_plot(scan)
+
+    '''
+    rt = rc.controller.get_trigger(rc.controller.Trigger.RIGHT)
+    lt = rc.controller.get_trigger(rc.controller.Trigger.LEFT)
+    speed= rc_utils.clamp(lt-rt,-0.1,0.1)
+    '''
+    rc.drive.set_speed_angle(speed, angle)
+# [FUNCTION] update_slow() is similar to update() but is called once per second by
+# default. It is especially useful for printing debug messages, since printing a 
+# message every frame in update is computationally expensive and creates clutter
+
+
+
+########################################################################################
+# DO NOT MODIFY: Register start and update and begin execution
+########################################################################################
+
+if __name__ == "__main__":
+    rc.set_start_update(start, update)
+    rc.go()
